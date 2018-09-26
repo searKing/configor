@@ -1,6 +1,7 @@
 package configor
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/ioutil"
@@ -10,7 +11,7 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
-	yaml "gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v2"
 )
 
 // UnmatchedTomlKeysError errors are returned by the Load function when
@@ -203,13 +204,26 @@ func (configor *Configor) processTags(config interface{}, prefixes ...string) er
 				break
 			}
 		}
-
+		// for slice
+		var isOmitEmpty bool
 		if isBlank := reflect.DeepEqual(field.Interface(), reflect.Zero(field.Type()).Interface()); isBlank {
 			// Set default configuration if blank
-			if value := fieldStruct.Tag.Get("default"); value != "" {
-				if err := yaml.Unmarshal([]byte(value), field.Addr().Interface()); err != nil {
+			if tag := fieldStruct.Tag.Get("default"); tag != "" {
+				tagOptions := strings.Split(tag, ",")
+				tag = tagOptions[0]
+				if len(tagOptions) > 1 {
+					for _, tagOption := range tagOptions[1:] {
+						switch tagOption {
+						case "omitempty":
+							isOmitEmpty = true
+						}
+					}
+				}
+
+				if err := yaml.Unmarshal([]byte(tag), field.Addr().Interface()); err != nil {
 					return err
 				}
+
 			} else if fieldStruct.Tag.Get("required") == "true" {
 				// return error if it is required but blank
 				return errors.New(fieldStruct.Name + " is required, but blank")
@@ -227,6 +241,11 @@ func (configor *Configor) processTags(config interface{}, prefixes ...string) er
 		}
 
 		if field.Kind() == reflect.Slice {
+			if field.Len() == 0 && !isOmitEmpty {
+				if err := json.Unmarshal([]byte("[{}]"), field.Addr().Interface()); err != nil {
+					return err
+				}
+			}
 			for i := 0; i < field.Len(); i++ {
 				if reflect.Indirect(field.Index(i)).Kind() == reflect.Struct {
 					if err := configor.processTags(field.Index(i).Addr().Interface(), append(getPrefixForStruct(prefixes, &fieldStruct), fmt.Sprint(i))...); err != nil {
