@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/searKing/golib/bufio"
 	"io/ioutil"
 	"os"
 	"path"
@@ -209,14 +210,25 @@ func (configor *Configor) processTags(config interface{}, prefixes ...string) er
 		if isBlank := reflect.DeepEqual(field.Interface(), reflect.Zero(field.Type()).Interface()); isBlank {
 			// Set default configuration if blank
 			if tag := fieldStruct.Tag.Get("default"); tag != "" {
-				tagOptions := strings.Split(tag, ",")
-				tag = tagOptions[0]
-				if len(tagOptions) > 1 {
-					for _, tagOption := range tagOptions[1:] {
-						switch tagOption {
-						case "omitempty":
-							isOmitEmpty = true
+				var tagOption string
+				kind := reflect.Indirect(field).Kind()
+				if kind == reflect.Slice ||
+					kind == reflect.Map ||
+					kind == reflect.Array {
+					if tag[0] == '[' || tag[0] == '{' {
+						defaultValue, err := bufio.NewPairScanner(strings.NewReader(tag)).SetDiscardLeading(true).ScanDelimiters("{}[]")
+						if err == nil {
+							tagOption = tag[len(defaultValue):]
+							tag = tag[:len(defaultValue)]
 						}
+					}
+				}
+				tagOptions := strings.Split(tagOption, ",")
+
+				for _, tagOption := range tagOptions {
+					switch tagOption {
+					case "omitempty":
+						isOmitEmpty = true
 					}
 				}
 
